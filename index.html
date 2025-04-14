@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maze Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; /* Prevent pull-to-refresh */
+        }
+        #maze-canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #e2e8f0; /* slate-200 */
+            user-select: none;
+            -webkit-user-select: none; /* Safari */
+            -moz-user-select: none; /* Firefox */
+            -ms-user-select: none; /* IE10+ */
+            touch-action: manipulation; /* Prevent zooming/panning on touch */
+            cursor: pointer; /* Indicate it's clickable */
+        }
+        button {
+            transition: background-color 0.3s ease, transform 0.1s ease;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        html, body {
+            overflow: hidden;
+            height: 100%;
+        }
+        #game-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.75);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        #game-message.visible {
+            opacity: 1;
+        }
+        #game-screen-container {
+            position: relative;
+        }
+        #stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        #stats p {
+             margin-right: 10px;
+        }
+        #stats p:last-child {
+             margin-right: 0;
+        }
+
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex items-center justify-center min-h-screen">
+
+    <div id="container" class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-lg text-center">
+
+        <div id="start-menu">
+            <h1 class="text-3xl sm:text-4xl font-bold text-indigo-700 mb-6">Maze Explorer</h1>
+            <div id="high-score" class="mb-8 text-lg text-gray-600">
+                <p>Highest Round: <span id="highest-round-display" class="font-semibold text-indigo-600">0</span></p>
+                <p>Last Game Steps: <span id="last-steps-display" class="font-semibold text-indigo-600">0</span></p>
+            </div>
+            <button id="new-game-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 text-lg">
+                Start New Game
+            </button>
+        </div>
+
+        <div id="game-screen" class="hidden">
+            <div id="stats" class="mb-4 text-lg">
+                <p class="text-gray-700">Round: <span id="round" class="font-bold text-indigo-600">1</span></p>
+                <p class="text-gray-700">Steps: <span id="steps" class="font-bold text-indigo-600">0</span></p>
+                <p class="text-gray-700">Time: <span id="timer" class="font-bold text-indigo-600">00:30</span></p>
+            </div>
+            <div id="game-screen-container" class="relative mb-4">
+                 <canvas id="maze-canvas" width="400" height="400" class="rounded-lg shadow-inner"></canvas>
+                 <div id="game-message">Message Text</div>
+            </div>
+            <p class="text-sm text-gray-500 mb-4">Use Arrow Keys or Tap/Click on the maze to move</p>
+            <button id="exit-game-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-opacity-50">
+                Exit to Menu
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const startMenu = document.getElementById('start-menu');
+        const gameScreen = document.getElementById('game-screen');
+        const newGameBtn = document.getElementById('new-game-btn');
+        const exitGameBtn = document.getElementById('exit-game-btn');
+        const highScoreDiv = document.getElementById('high-score');
+        const highestRoundDisplay = document.getElementById('highest-round-display');
+        const lastStepsDisplay = document.getElementById('last-steps-display');
+        const roundDisplay = document.getElementById('round');
+        const stepsDisplay = document.getElementById('steps');
+        const timerDisplay = document.getElementById('timer');
+        const canvas = document.getElementById('maze-canvas');
+        const ctx = canvas.getContext('2d');
+        const gameMessage = document.getElementById('game-message');
+
+        // --- Game Configuration ---
+        const MAZE_DIMENSION = 15;
+        const CELL_SIZE = Math.floor(canvas.width / MAZE_DIMENSION);
+        canvas.width = CELL_SIZE * MAZE_DIMENSION;
+        canvas.height = CELL_SIZE * MAZE_DIMENSION;
+        const GAME_DURATION = 30;
+
+        const WALL_COLOR = '#4a5568';
+        const PATH_COLOR = '#f7fafc';
+        const PLAYER_COLOR = '#4f46e5';
+        const START_COLOR = '#34d399';
+        const EXIT_COLOR = '#f87171';
+
+        // --- Game State ---
+        let currentScreen = 'start';
+        let round = 1;
+        let steps = 0;
+        let highestRound = 0;
+        let lastGameSteps = 0;
+        let currentGameHighestRound = 1;
+        let playerPos = { x: 1, y: 1 };
+        let startPos = { x: 1, y: 1 };
+        let exitPos = { x: MAZE_DIMENSION - 2, y: MAZE_DIMENSION - 2 };
+        let maze = [];
+        let pathCells = [];
+        let messageTimeout = null;
+        let timerValue = GAME_DURATION;
+        let timerInterval = null; // Stores the setInterval ID
+        let isGameOver = false;
+        let audioStarted = false;
+        let timerPaused = false; // Flag to indicate if timer was paused by a message
+
+        // --- Tone.js Synths ---
+        let mainSynth = null;
+        let stepSynth = null;
+
+        function initializeSynths() {
+            if (!mainSynth) {
+                 mainSynth = new Tone.Synth({
+                     oscillator: { type: 'triangle' },
+                     envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 }
+                 }).toDestination();
+            }
+             if (!stepSynth) {
+                 stepSynth = new Tone.Synth({
+                     oscillator: { type: 'sine' },
+                     volume: -25,
+                     envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.05 }
+                 }).toDestination();
+            }
+        }
+
+        // --- Sound Playing Functions ---
+        function playStartSound() {
+            if (mainSynth) mainSynth.triggerAttackRelease("C4", "8n", Tone.now());
+        }
+        function playStepSound() {
+            if (stepSynth) stepSynth.triggerAttackRelease("E4", "16n", Tone.now());
+        }
+        function playNextLevelSound() {
+             if (mainSynth) {
+                const now = Tone.now();
+                mainSynth.triggerAttackRelease("C5", "16n", now);
+                mainSynth.triggerAttackRelease("E5", "16n", now + 0.1);
+                mainSynth.triggerAttackRelease("G5", "8n", now + 0.2);
+            }
+        }
+        // Updated Game Over Sound (Sad Multi-tone)
+        function playGameOverSound() {
+             if (mainSynth) {
+                const now = Tone.now();
+                mainSynth.triggerAttackRelease("C4", "8n", now);
+                mainSynth.triggerAttackRelease("A3", "8n", now + 0.15);
+                mainSynth.triggerAttackRelease("F3", "4n", now + 0.3);
+            }
+        }
+        // New Exit Sound (Neutral)
+        function playExitSound() {
+             if (mainSynth) mainSynth.triggerAttackRelease("E4", "8n", Tone.now());
+        }
+
+
+        // --- Maze Generation (Unchanged) ---
+        function generateMaze() {
+            // ... (maze generation code remains the same) ...
+             maze = Array(MAZE_DIMENSION).fill(0).map(() => Array(MAZE_DIMENSION).fill(1));
+            pathCells = [];
+            const stack = [];
+            const startX = 1, startY = 1;
+            maze[startY][startX] = 0;
+            stack.push({ x: startX, y: startY });
+
+            while (stack.length > 0) {
+                const current = stack[stack.length - 1];
+                const neighbors = [];
+                const directions = [{ x: 0, y: -2 }, { x: 0, y: 2 }, { x: -2, y: 0 }, { x: 2, y: 0 }];
+
+                for (const dir of directions) {
+                    const nx = current.x + dir.x;
+                    const ny = current.y + dir.y;
+                    if (nx > 0 && nx < MAZE_DIMENSION - 1 && ny > 0 && ny < MAZE_DIMENSION - 1 && maze[ny][nx] === 1) {
+                        neighbors.push({ x: nx, y: ny, wallX: current.x + dir.x / 2, wallY: current.y + dir.y / 2 });
+                    }
+                }
+
+                if (neighbors.length > 0) {
+                    const chosen = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    maze[chosen.y][chosen.x] = 0;
+                    maze[chosen.wallY][chosen.wallX] = 0;
+                    stack.push({ x: chosen.x, y: chosen.y });
+                } else {
+                    stack.pop();
+                }
+            }
+
+            for (let y = 0; y < MAZE_DIMENSION; y++) {
+                for (let x = 0; x < MAZE_DIMENSION; x++) {
+                    if (maze[y][x] === 0) {
+                        pathCells.push({ x, y });
+                    }
+                }
+            }
+
+            let startIndex, exitIndex;
+            let distance = 0;
+            const minDistance = MAZE_DIMENSION / 2;
+            do {
+                startIndex = Math.floor(Math.random() * pathCells.length);
+                exitIndex = Math.floor(Math.random() * pathCells.length);
+                if (startIndex !== exitIndex && pathCells.length > 1) {
+                    startPos = pathCells[startIndex];
+                    exitPos = pathCells[exitIndex];
+                    distance = Math.abs(startPos.x - exitPos.x) + Math.abs(startPos.y - exitPos.y);
+                } else if (pathCells.length <= 1) {
+                    console.error("Maze generation failed or resulted in too few path cells.");
+                    startPos = { x: 1, y: 1 };
+                    exitPos = { x: MAZE_DIMENSION - 2, y: MAZE_DIMENSION - 2};
+                    break;
+                }
+            } while (startIndex === exitIndex || distance < minDistance);
+
+            playerPos = { ...startPos };
+        }
+
+        // --- Drawing Functions (Unchanged) ---
+        function drawMaze() {
+            // ... (drawing code remains the same) ...
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let y = 0; y < MAZE_DIMENSION; y++) {
+                for (let x = 0; x < MAZE_DIMENSION; x++) {
+                    ctx.fillStyle = maze[y][x] === 1 ? WALL_COLOR : PATH_COLOR;
+                    ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    if (x === startPos.x && y === startPos.y) {
+                        ctx.fillStyle = START_COLOR;
+                        ctx.beginPath();
+                        ctx.arc(x * CELL_SIZE + CELL_SIZE / 2, y * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.3, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (x === exitPos.x && y === exitPos.y) {
+                        ctx.fillStyle = EXIT_COLOR;
+                        ctx.beginPath();
+                        ctx.arc(x * CELL_SIZE + CELL_SIZE / 2, y * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+             drawPlayer();
+        }
+
+        function drawPlayer() {
+             ctx.fillStyle = PLAYER_COLOR;
+            ctx.beginPath();
+            ctx.arc(playerPos.x * CELL_SIZE + CELL_SIZE / 2, playerPos.y * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // --- Game Logic ---
+        function updateStatsDisplay() {
+            roundDisplay.textContent = round;
+            stepsDisplay.textContent = steps;
+        }
+
+        function updateHighScoreDisplay() {
+            highestRoundDisplay.textContent = highestRound;
+            lastStepsDisplay.textContent = lastGameSteps;
+        }
+
+        function loadHighScore() {
+            highestRound = parseInt(localStorage.getItem('mazeHighestRound') || '0');
+            lastGameSteps = parseInt(localStorage.getItem('mazeLastGameSteps') || '0');
+            updateHighScoreDisplay();
+        }
+
+        function saveHighScore(finalSteps) {
+             if (round > highestRound) {
+                 highestRound = round;
+                 lastGameSteps = finalSteps;
+                 localStorage.setItem('mazeHighestRound', highestRound);
+                 localStorage.setItem('mazeLastGameSteps', lastGameSteps);
+             } else {
+                  // Always update last game steps when a game ends
+                  lastGameSteps = finalSteps;
+                  localStorage.setItem('mazeLastGameSteps', lastGameSteps);
+             }
+             updateHighScoreDisplay();
+        }
+
+        // --- Timer Functions ---
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        }
+
+        function updateTimerDisplay() {
+            timerDisplay.textContent = formatTime(timerValue);
+        }
+
+        // Resets value and starts the interval via resumeTimer
+        function startTimer() {
+            stopTimer(); // Clear any existing timer first
+            isGameOver = false;
+            timerValue = GAME_DURATION; // Reset time
+            updateTimerDisplay();
+            resumeTimer(); // Start the interval
+        }
+
+        // Clears interval and resets paused flag
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                // console.log("Timer stopped"); // Keep for debugging if needed
+            }
+             timerPaused = false; // Reset paused flag whenever timer is stopped explicitly
+        }
+
+        // Starts interval if conditions met
+        function resumeTimer() {
+            // Only resume if timer is not already running, game is not over, and time remains
+            if (!timerInterval && !isGameOver && timerValue > 0) {
+                 // console.log("Timer resumed with value:", timerValue); // Keep for debugging
+                 timerInterval = setInterval(() => {
+                    timerValue--;
+                    updateTimerDisplay();
+                    if (timerValue <= 0) {
+                        gameOver("time"); // gameOver will call stopTimer
+                    }
+                }, 1000);
+            }
+        }
+
+
+        // --- Message Function ---
+        function showMessage(text, duration = 2000, callback = null) {
+            if (messageTimeout) {
+                clearTimeout(messageTimeout);
+            }
+
+            // --- Pause Timer Logic ---
+            let wasTimerRunning = !!timerInterval; // Check if timer was running *before* stopping
+            if (wasTimerRunning) {
+                stopTimer(); // Stop the timer interval
+                timerPaused = true; // Set flag indicating it was paused by the message
+                // console.log("Timer paused for message"); // Keep for debugging
+            }
+            // --- End Pause Timer Logic ---
+
+            gameMessage.textContent = text;
+            gameMessage.classList.add('visible');
+
+            messageTimeout = setTimeout(() => {
+                gameMessage.classList.remove('visible');
+                messageTimeout = null;
+
+                // --- Resume Timer Logic ---
+                if (timerPaused) { // Only resume if *this message* paused it
+                    resumeTimer();
+                    timerPaused = false; // Reset the flag
+                }
+                // --- End Resume Timer Logic ---
+
+                if (callback) {
+                    callback();
+                }
+            }, duration);
+        }
+
+        // --- Game Over Function ---
+        function gameOver(reason) {
+            if (isGameOver) return;
+            isGameOver = true;
+            stopTimer(); // Ensure timer is stopped permanently
+            document.removeEventListener('keydown', handleKeyPress);
+            canvas.removeEventListener('click', handleCanvasClick);
+
+            if(audioStarted) playGameOverSound();
+
+            let message = "Game Over!";
+            if (reason === "time") {
+                message = `Time's Up! You made it to level ${round}!`;
+            }
+
+            const messageDuration = 3000;
+            // Show message; timer won't resume because isGameOver is true
+            // and resumeTimer checks for !isGameOver
+            showMessage(message, messageDuration, () => {
+                 saveHighScore(steps);
+                 switchScreen('start');
+            });
+             // Ensure timerPaused is false after game over message starts,
+             // as the timer should not resume. stopTimer() already handles this.
+        }
+
+
+        // --- Updated switchScreen ---
+        function switchScreen(screenName) {
+            currentScreen = screenName;
+            document.removeEventListener('keydown', handleKeyPress);
+            canvas.removeEventListener('click', handleCanvasClick);
+            stopTimer(); // Always stop timer when switching screens
+
+            if (screenName === 'start') {
+                startMenu.classList.remove('hidden');
+                gameScreen.classList.add('hidden');
+                updateHighScoreDisplay();
+            } else { // 'game'
+                startMenu.classList.add('hidden');
+                gameScreen.classList.remove('hidden');
+                document.addEventListener('keydown', handleKeyPress);
+                canvas.addEventListener('click', handleCanvasClick);
+                updateStatsDisplay();
+                // Don't update timer display here, startTimer will do it
+                drawMaze();
+                if (round === 1 && steps === 0) {
+                     // Use showMessage so timer pausing works correctly
+                     showMessage("Get to the exit!", 2000);
+                }
+            }
+        }
+
+        // --- Updated startNewGame ---
+        async function startNewGame() {
+            if (!audioStarted) {
+                try {
+                    await Tone.start();
+                    console.log('Audio context started');
+                    initializeSynths();
+                    audioStarted = true;
+                } catch (e) {
+                    console.error("Failed to start audio context:", e);
+                }
+            }
+
+            round = 1;
+            steps = 0;
+            currentGameHighestRound = 1;
+            generateMaze();
+            switchScreen('game'); // Switch screen *before* starting timer
+            startTimer(); // Start the timer (resets value and starts interval)
+            if (audioStarted) playStartSound();
+        }
+
+        function nextRound() {
+            generateMaze();
+            updateStatsDisplay();
+            drawMaze();
+            // Timer is resumed by the showMessage callback in movePlayer
+        }
+
+        function movePlayer(dx, dy) {
+            if (dx === 0 && dy === 0) return;
+
+            const nextX = playerPos.x + dx;
+            const nextY = playerPos.y + dy;
+
+            if (nextX >= 0 && nextX < MAZE_DIMENSION &&
+                nextY >= 0 && nextY < MAZE_DIMENSION &&
+                maze[nextY][nextX] === 0)
+            {
+                playerPos.x = nextX;
+                playerPos.y = nextY;
+                steps++;
+                if(audioStarted) playStepSound();
+                updateStatsDisplay();
+                drawMaze();
+
+                // Check for win condition
+                if (playerPos.x === exitPos.x && playerPos.y === exitPos.y) {
+                    console.log("Reached Exit!");
+                    if(audioStarted) playNextLevelSound();
+
+                    const nextRoundNumber = round + 1;
+                    let message = `Entering Level ${nextRoundNumber}`;
+                    let isNewBest = false;
+
+                    if (nextRoundNumber > currentGameHighestRound) {
+                        currentGameHighestRound = nextRoundNumber;
+                        message += ". New Best!";
+                        isNewBest = true;
+                        console.log(`New best round for this game: ${currentGameHighestRound}`);
+                    }
+
+                    const messageDuration = isNewBest ? 2500 : 2000;
+                    round++;
+
+                    // Show message, timer paused during message, nextRound called after
+                    showMessage(message, messageDuration, nextRound);
+                }
+            }
+        }
+
+        // --- Updated handleKeyPress ---
+        function handleKeyPress(event) {
+            if (currentScreen !== 'game' || messageTimeout || isGameOver || !audioStarted) return;
+
+            switch (event.key) {
+                case 'ArrowUp': case 'w': movePlayer(0, -1); event.preventDefault(); break;
+                case 'ArrowDown': case 's': movePlayer(0, 1); event.preventDefault(); break;
+                case 'ArrowLeft': case 'a': movePlayer(-1, 0); event.preventDefault(); break;
+                case 'ArrowRight': case 'd': movePlayer(1, 0); event.preventDefault(); break;
+            }
+        }
+
+        // --- Updated handleCanvasClick ---
+        function handleCanvasClick(event) {
+             if (currentScreen !== 'game' || messageTimeout || isGameOver || !audioStarted) return;
+             // ... (rest of click handling code remains the same) ...
+              const rect = canvas.getBoundingClientRect();
+             const clickX = event.clientX - rect.left;
+             const clickY = event.clientY - rect.top;
+             const targetGridX = Math.floor(clickX / CELL_SIZE);
+             const targetGridY = Math.floor(clickY / CELL_SIZE);
+             const diffX = targetGridX - playerPos.x;
+             const diffY = targetGridY - playerPos.y;
+             let dx = 0;
+             let dy = 0;
+
+             if (Math.abs(diffX) > Math.abs(diffY)) {
+                 dx = diffX > 0 ? 1 : -1;
+             } else if (Math.abs(diffY) > Math.abs(diffX)) {
+                 dy = diffY > 0 ? 1 : -1;
+             } else if (diffX !== 0) {
+                 dx = diffX > 0 ? 1 : -1;
+             }
+             movePlayer(dx, dy);
+        }
+
+
+        // --- Updated exitGame ---
+        function exitGame() {
+            if (isGameOver) return;
+            stopTimer(); // Stop timer permanently
+            if(audioStarted) playExitSound(); // Play neutral exit sound
+            saveHighScore(steps);
+            document.removeEventListener('keydown', handleKeyPress);
+            canvas.removeEventListener('click', handleCanvasClick);
+            // Short delay for sound
+            setTimeout(() => {
+                 switchScreen('start');
+            }, 300);
+        }
+
+        // --- Initialization ---
+        newGameBtn.addEventListener('click', async () => {
+            // Call startNewGame directly, it handles async Tone.start()
+            startNewGame();
+        });
+        exitGameBtn.addEventListener('click', exitGame);
+
+        loadHighScore();
+        switchScreen('start');
+
+    </script>
+
+</body>
+</html>
