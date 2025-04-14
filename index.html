@@ -154,6 +154,10 @@
         canvas.height = CELL_SIZE * MAZE_DIMENSION;
         const GAME_DURATION = 30;
         const MAX_TIME_UP_ITEMS_DEFAULT = 3;
+        const WALL_REMOVAL_BASE_START = 0.10;
+        const WALL_REMOVAL_DECREASE_PER_ROUND = 0.01;
+        const WALL_REMOVAL_RANDOM_VARIATION = 0.06;
+        const WALL_REMOVAL_MAX_PERCENTAGE = 0.20;
 
         const WALL_COLOR = '#4a5568';
         const PATH_COLOR = '#f7fafc';
@@ -212,19 +216,46 @@
             maze = Array(MAZE_DIMENSION).fill(0).map(() => Array(MAZE_DIMENSION).fill(1));
             pathCells = []; // Reset path cells list
 
-            // 2. Recursive Backtracking to carve paths
+            // 2. Modified Backtracking Algorithm (Random Cell Selection from Stack)
             const stack = [];
             const startX = 1, startY = 1;
-            maze[startY][startX] = 0;
-            stack.push({ x: startX, y: startY });
+            maze[startY][startX] = 0; // Mark starting cell as path
+            stack.push({ x: startX, y: startY }); // Add starting cell to stack
+
             while (stack.length > 0) {
-                const current = stack[stack.length - 1]; const neighbors = [];
+                // ** Select a random cell from the stack **
+                const randomIndex = Math.floor(Math.random() * stack.length);
+                const current = stack[randomIndex];
+
+                const neighbors = [];
+                // Check potential neighbors (2 cells away)
                 const directions = [{ x: 0, y: -2 }, { x: 0, y: 2 }, { x: -2, y: 0 }, { x: 2, y: 0 }];
-                for (const dir of directions) { const nx = current.x + dir.x; const ny = current.y + dir.y; if (nx > 0 && nx < MAZE_DIMENSION - 1 && ny > 0 && ny < MAZE_DIMENSION - 1 && maze[ny][nx] === 1) { neighbors.push({ x: nx, y: ny, wallX: current.x + dir.x / 2, wallY: current.y + dir.y / 2 }); } }
-                if (neighbors.length > 0) { const chosen = neighbors[Math.floor(Math.random() * neighbors.length)]; maze[chosen.y][chosen.x] = 0; maze[chosen.wallY][chosen.wallX] = 0; stack.push({ x: chosen.x, y: chosen.y }); } else { stack.pop(); }
+
+                for (const dir of directions) {
+                    const nx = current.x + dir.x;
+                    const ny = current.y + dir.y;
+                    // Check bounds and if the neighbor is unvisited (still a wall)
+                    if (nx > 0 && nx < MAZE_DIMENSION - 1 && ny > 0 && ny < MAZE_DIMENSION - 1 && maze[ny][nx] === 1) {
+                        neighbors.push({ x: nx, y: ny, wallX: current.x + dir.x / 2, wallY: current.y + dir.y / 2 });
+                    }
+                }
+
+                if (neighbors.length > 0) {
+                    // Choose a random neighbor
+                    const chosen = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    // Carve path to the neighbor and the wall in between
+                    maze[chosen.y][chosen.x] = 0;
+                    maze[chosen.wallY][chosen.wallX] = 0;
+                    // Push the chosen neighbor onto the stack
+                    stack.push({ x: chosen.x, y: chosen.y });
+                } else {
+                    // No unvisited neighbors for the 'current' cell, remove it from the stack
+                    // ** Remove the specific cell using splice, not just pop **
+                    stack.splice(randomIndex, 1);
+                }
             }
 
-            // 3. ** Remove some internal walls based on current round **
+            // 3. Remove some internal walls based on current round and randomness
             const removableWalls = [];
             for (let y = 1; y < MAZE_DIMENSION - 1; y++) {
                 for (let x = 1; x < MAZE_DIMENSION - 1; x++) {
@@ -235,17 +266,15 @@
                 }
             }
 
-            // Calculate dynamic removal percentage
-            // Starts at 0.10 (10%) for round 1, decreases by 0.01 each round, minimum 0 from round 10 onwards.
-            const currentWallRemovalPercentage = Math.max(0, 0.10 - (round - 1) * 0.01);
+            const basePercentage = Math.max(0, WALL_REMOVAL_BASE_START - (round - 1) * WALL_REMOVAL_DECREASE_PER_ROUND);
+            const randomVariation = (Math.random() * WALL_REMOVAL_RANDOM_VARIATION) - (WALL_REMOVAL_RANDOM_VARIATION / 2);
+            const finalWallRemovalPercentage = Math.max(0, Math.min(WALL_REMOVAL_MAX_PERCENTAGE, basePercentage + randomVariation));
 
-            // Shuffle the removable walls list
             for (let i = removableWalls.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [removableWalls[i], removableWalls[j]] = [removableWalls[j], removableWalls[i]]; }
 
-            // Remove a percentage of the removable walls
-            const numWallsToRemove = Math.floor(removableWalls.length * currentWallRemovalPercentage);
+            const numWallsToRemove = Math.floor(removableWalls.length * finalWallRemovalPercentage);
             for (let i = 0; i < numWallsToRemove; i++) { const wall = removableWalls[i]; if (wall) { maze[wall.y][wall.x] = 0; } }
-            console.log(`Round ${round}: Wall removal %: ${currentWallRemovalPercentage.toFixed(2)}, Removed ${numWallsToRemove} walls.`);
+            console.log(`Round ${round}: Base Removal %: ${basePercentage.toFixed(2)}, Final Removal %: ${finalWallRemovalPercentage.toFixed(2)}, Removed ${numWallsToRemove} walls.`);
 
 
             // 4. Collect all final path cells
