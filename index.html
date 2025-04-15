@@ -13,18 +13,24 @@
         /* Custom styles */
         body {
             font-family: 'Inter', sans-serif;
-            overscroll-behavior: none;
+            overscroll-behavior: none; /* Prevent pull-to-refresh */
+            touch-action: manipulation; /* Prevent double-tap zoom on body */
         }
         #maze-canvas {
             display: block;
-            margin: 0 auto;
+            margin-left: auto;
+            margin-right: auto;
             background-color: #e2e8f0; /* slate-200 */
             user-select: none;
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
-            touch-action: manipulation;
+            touch-action: manipulation; /* Prevent zooming/panning on canvas */
             cursor: pointer;
+            /* Responsive scaling */
+            width: 100%;
+            height: auto;
+            /* max-width is set dynamically via JS */
         }
         button {
             transition: background-color 0.3s ease, transform 0.1s ease;
@@ -45,7 +51,8 @@
             color: white;
             padding: 15px 25px;
             border-radius: 10px;
-            font-size: 1.5rem;
+            /* Responsive font size using clamp */
+            font-size: clamp(1rem, 4vw, 1.5rem); /* Min 1rem, scales with 4% viewport width, Max 1.5rem */
             font-weight: bold;
             text-align: center;
             z-index: 10;
@@ -53,6 +60,7 @@
             transition: opacity 0.5s ease-in-out;
             pointer-events: none;
             white-space: nowrap;
+            max-width: 90%; /* Prevent text from getting too wide even if it wraps */
         }
         #game-message.visible {
             opacity: 1;
@@ -118,7 +126,7 @@
                 <p class="text-gray-700">Time: <span id="timer" class="font-bold text-indigo-600">00:30</span></p>
             </div>
             <div id="game-screen-container" class="relative mb-4">
-                 <canvas id="maze-canvas" width="400" height="400" class="rounded-lg shadow-inner"></canvas>
+                 <canvas id="maze-canvas" width="400" height="400"></canvas>
                  <div id="game-message">Message Text</div>
                  <div id="pickup-notification">Item picked up!</div>
             </div>
@@ -149,9 +157,14 @@
 
         // --- Game Configuration ---
         const MAZE_DIMENSION = 15; // Must be odd
-        const CELL_SIZE = Math.floor(canvas.width / MAZE_DIMENSION);
-        canvas.width = CELL_SIZE * MAZE_DIMENSION;
-        canvas.height = CELL_SIZE * MAZE_DIMENSION;
+        const initialCanvasWidth = canvas.width;
+        const CELL_SIZE = Math.floor(initialCanvasWidth / MAZE_DIMENSION);
+        const canvasPixelWidth = CELL_SIZE * MAZE_DIMENSION;
+        const canvasPixelHeight = CELL_SIZE * MAZE_DIMENSION;
+        canvas.width = canvasPixelWidth;
+        canvas.height = canvasPixelHeight;
+        canvas.style.maxWidth = `${canvasPixelWidth}px`; // Set max CSS width
+
         const GAME_DURATION = 30;
         const MAX_TIME_UP_ITEMS_DEFAULT = 3;
         const WALL_REMOVAL_BASE_START = 0.10;
@@ -212,97 +225,18 @@
 
         // --- Maze Generation ---
         function generateMaze() {
-            // 1. Initialize grid with walls
-            maze = Array(MAZE_DIMENSION).fill(0).map(() => Array(MAZE_DIMENSION).fill(1));
-            pathCells = []; // Reset path cells list
-
-            // 2. Modified Backtracking Algorithm (Random Cell Selection from Stack)
-            const stack = [];
-            const startX = 1, startY = 1;
-            maze[startY][startX] = 0; // Mark starting cell as path
-            stack.push({ x: startX, y: startY }); // Add starting cell to stack
-
-            while (stack.length > 0) {
-                // ** Select a random cell from the stack **
-                const randomIndex = Math.floor(Math.random() * stack.length);
-                const current = stack[randomIndex];
-
-                const neighbors = [];
-                // Check potential neighbors (2 cells away)
-                const directions = [{ x: 0, y: -2 }, { x: 0, y: 2 }, { x: -2, y: 0 }, { x: 2, y: 0 }];
-
-                for (const dir of directions) {
-                    const nx = current.x + dir.x;
-                    const ny = current.y + dir.y;
-                    // Check bounds and if the neighbor is unvisited (still a wall)
-                    if (nx > 0 && nx < MAZE_DIMENSION - 1 && ny > 0 && ny < MAZE_DIMENSION - 1 && maze[ny][nx] === 1) {
-                        neighbors.push({ x: nx, y: ny, wallX: current.x + dir.x / 2, wallY: current.y + dir.y / 2 });
-                    }
-                }
-
-                if (neighbors.length > 0) {
-                    // Choose a random neighbor
-                    const chosen = neighbors[Math.floor(Math.random() * neighbors.length)];
-                    // Carve path to the neighbor and the wall in between
-                    maze[chosen.y][chosen.x] = 0;
-                    maze[chosen.wallY][chosen.wallX] = 0;
-                    // Push the chosen neighbor onto the stack
-                    stack.push({ x: chosen.x, y: chosen.y });
-                } else {
-                    // No unvisited neighbors for the 'current' cell, remove it from the stack
-                    // ** Remove the specific cell using splice, not just pop **
-                    stack.splice(randomIndex, 1);
-                }
-            }
-
-            // 3. Remove some internal walls based on current round and randomness
-            const removableWalls = [];
-            for (let y = 1; y < MAZE_DIMENSION - 1; y++) {
-                for (let x = 1; x < MAZE_DIMENSION - 1; x++) {
-                    if (maze[y][x] === 1) {
-                        if (maze[y][x - 1] === 0 && maze[y][x + 1] === 0) { removableWalls.push({ x, y }); }
-                        else if (maze[y - 1][x] === 0 && maze[y + 1][x] === 0) { removableWalls.push({ x, y }); }
-                    }
-                }
-            }
-
-            const basePercentage = Math.max(0, WALL_REMOVAL_BASE_START - (round - 1) * WALL_REMOVAL_DECREASE_PER_ROUND);
-            const randomVariation = (Math.random() * WALL_REMOVAL_RANDOM_VARIATION) - (WALL_REMOVAL_RANDOM_VARIATION / 2);
-            const finalWallRemovalPercentage = Math.max(0, Math.min(WALL_REMOVAL_MAX_PERCENTAGE, basePercentage + randomVariation));
-
-            for (let i = removableWalls.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [removableWalls[i], removableWalls[j]] = [removableWalls[j], removableWalls[i]]; }
-
-            const numWallsToRemove = Math.floor(removableWalls.length * finalWallRemovalPercentage);
-            for (let i = 0; i < numWallsToRemove; i++) { const wall = removableWalls[i]; if (wall) { maze[wall.y][wall.x] = 0; } }
-            console.log(`Round ${round}: Base Removal %: ${basePercentage.toFixed(2)}, Final Removal %: ${finalWallRemovalPercentage.toFixed(2)}, Removed ${numWallsToRemove} walls.`);
-
-
-            // 4. Collect all final path cells
+            maze = Array(MAZE_DIMENSION).fill(0).map(() => Array(MAZE_DIMENSION).fill(1)); pathCells = [];
+            const stack = []; const startX = 1, startY = 1; maze[startY][startX] = 0; stack.push({ x: startX, y: startY });
+            while (stack.length > 0) { const randomIndex = Math.floor(Math.random() * stack.length); const current = stack[randomIndex]; const neighbors = []; const directions = [{ x: 0, y: -2 }, { x: 0, y: 2 }, { x: -2, y: 0 }, { x: 2, y: 0 }]; for (const dir of directions) { const nx = current.x + dir.x; const ny = current.y + dir.y; if (nx > 0 && nx < MAZE_DIMENSION - 1 && ny > 0 && ny < MAZE_DIMENSION - 1 && maze[ny][nx] === 1) { neighbors.push({ x: nx, y: ny, wallX: current.x + dir.x / 2, wallY: current.y + dir.y / 2 }); } } if (neighbors.length > 0) { const chosen = neighbors[Math.floor(Math.random() * neighbors.length)]; maze[chosen.y][chosen.x] = 0; maze[chosen.wallY][chosen.wallX] = 0; stack.push({ x: chosen.x, y: chosen.y }); } else { stack.splice(randomIndex, 1); } }
+            const removableWalls = []; for (let y = 1; y < MAZE_DIMENSION - 1; y++) { for (let x = 1; x < MAZE_DIMENSION - 1; x++) { if (maze[y][x] === 1) { if (maze[y][x - 1] === 0 && maze[y][x + 1] === 0) { removableWalls.push({ x, y }); } else if (maze[y - 1][x] === 0 && maze[y + 1][x] === 0) { removableWalls.push({ x, y }); } } } }
+            const basePercentage = Math.max(0, WALL_REMOVAL_BASE_START - (round - 1) * WALL_REMOVAL_DECREASE_PER_ROUND); const randomVariation = (Math.random() * WALL_REMOVAL_RANDOM_VARIATION) - (WALL_REMOVAL_RANDOM_VARIATION / 2); const finalWallRemovalPercentage = Math.max(0, Math.min(WALL_REMOVAL_MAX_PERCENTAGE, basePercentage + randomVariation)); for (let i = removableWalls.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [removableWalls[i], removableWalls[j]] = [removableWalls[j], removableWalls[i]]; } const numWallsToRemove = Math.floor(removableWalls.length * finalWallRemovalPercentage); for (let i = 0; i < numWallsToRemove; i++) { const wall = removableWalls[i]; if (wall) { maze[wall.y][wall.x] = 0; } } console.log(`Round ${round}: Base Removal %: ${basePercentage.toFixed(2)}, Final Removal %: ${finalWallRemovalPercentage.toFixed(2)}, Removed ${numWallsToRemove} walls.`);
             for (let y = 0; y < MAZE_DIMENSION; y++) { for (let x = 0; x < MAZE_DIMENSION; x++) { if (maze[y][x] === 0) pathCells.push({ x, y }); } }
-
-            // 5. Set Random Start and Exit from available path cells
-            let startIndex, exitIndex; let distance = 0; const minDistance = MAZE_DIMENSION / 2;
-            if (pathCells.length < 2) { console.error("Not enough path cells generated!"); startPos = { x: 1, y: 1 }; exitPos = { x: MAZE_DIMENSION - 2, y: MAZE_DIMENSION - 2 }; if (maze[startPos.y][startPos.x] !== 0) maze[startPos.y][startPos.x] = 0; if (maze[exitPos.y][exitPos.x] !== 0) maze[exitPos.y][exitPos.x] = 0; if (pathCells.length === 0) pathCells.push(startPos); if (pathCells.length === 1 && (startPos.x !== exitPos.x || startPos.y !== exitPos.y)) pathCells.push(exitPos); }
-            else { do { startIndex = Math.floor(Math.random() * pathCells.length); exitIndex = Math.floor(Math.random() * pathCells.length); if (startIndex !== exitIndex) { startPos = pathCells[startIndex]; exitPos = pathCells[exitIndex]; distance = Math.abs(startPos.x - exitPos.x) + Math.abs(startPos.y - exitPos.y); } } while (startIndex === exitIndex || distance < minDistance); }
-            playerPos = { ...startPos };
+            let startIndex, exitIndex; let distance = 0; const minDistance = MAZE_DIMENSION / 2; if (pathCells.length < 2) { console.error("Not enough path cells generated!"); startPos = { x: 1, y: 1 }; exitPos = { x: MAZE_DIMENSION - 2, y: MAZE_DIMENSION - 2 }; if (maze[startPos.y][startPos.x] !== 0) maze[startPos.y][startPos.x] = 0; if (maze[exitPos.y][exitPos.x] !== 0) maze[exitPos.y][exitPos.x] = 0; if (pathCells.length === 0) pathCells.push(startPos); if (pathCells.length === 1 && (startPos.x !== exitPos.x || startPos.y !== exitPos.y)) pathCells.push(exitPos); } else { do { startIndex = Math.floor(Math.random() * pathCells.length); exitIndex = Math.floor(Math.random() * pathCells.length); if (startIndex !== exitIndex) { startPos = pathCells[startIndex]; exitPos = pathCells[exitIndex]; distance = Math.abs(startPos.x - exitPos.x) + Math.abs(startPos.y - exitPos.y); } } while (startIndex === exitIndex || distance < minDistance); } playerPos = { ...startPos };
         }
 
         // --- Item Placement ---
         function placeItems() {
-            items = [];
-            const currentMaxTimeUp = (timerValue > 20) ? 1 : MAX_TIME_UP_ITEMS_DEFAULT;
-            let numTimeUpItems = Math.floor(Math.random() * (currentMaxTimeUp + 1));
-            if (timerValue < 10 && numTimeUpItems === 0) {
-                numTimeUpItems = 1;
-                if (numTimeUpItems > currentMaxTimeUp) numTimeUpItems = currentMaxTimeUp;
-            }
-            const occupiedCells = new Set(); occupiedCells.add(`${startPos.x},${startPos.y}`); occupiedCells.add(`${exitPos.x},${exitPos.y}`);
-            let placedCount = 0; let attempts = 0; const maxAttempts = pathCells.length * 2;
-            while (placedCount < numTimeUpItems && attempts < maxAttempts && pathCells.length > occupiedCells.size) {
-                 attempts++; const randomPathIndex = Math.floor(Math.random() * pathCells.length); const potentialPos = pathCells[randomPathIndex]; const posKey = `${potentialPos.x},${potentialPos.y}`;
-                 if (!occupiedCells.has(posKey)) { const itemData = itemTypes.time_up; items.push({ x: potentialPos.x, y: potentialPos.y, type: 'time_up', emoji: itemData.emoji, name: itemData.name }); occupiedCells.add(posKey); placedCount++; }
-            }
-             if (placedCount < numTimeUpItems) { console.warn(`Could only place ${placedCount}/${numTimeUpItems} Time Up items.`); }
+            items = []; const currentMaxTimeUp = (timerValue > 20) ? 1 : MAX_TIME_UP_ITEMS_DEFAULT; let numTimeUpItems = Math.floor(Math.random() * (currentMaxTimeUp + 1)); if (timerValue < 10 && numTimeUpItems === 0) { numTimeUpItems = 1; if (numTimeUpItems > currentMaxTimeUp) numTimeUpItems = currentMaxTimeUp; } const occupiedCells = new Set(); occupiedCells.add(`${startPos.x},${startPos.y}`); occupiedCells.add(`${exitPos.x},${exitPos.y}`); let placedCount = 0; let attempts = 0; const maxAttempts = pathCells.length * 2; while (placedCount < numTimeUpItems && attempts < maxAttempts && pathCells.length > occupiedCells.size) { attempts++; const randomPathIndex = Math.floor(Math.random() * pathCells.length); const potentialPos = pathCells[randomPathIndex]; const posKey = `${potentialPos.x},${potentialPos.y}`; if (!occupiedCells.has(posKey)) { const itemData = itemTypes.time_up; items.push({ x: potentialPos.x, y: potentialPos.y, type: 'time_up', emoji: itemData.emoji, name: itemData.name }); occupiedCells.add(posKey); placedCount++; } } if (placedCount < numTimeUpItems) { console.warn(`Could only place ${placedCount}/${numTimeUpItems} Time Up items.`); }
         }
 
 
@@ -339,7 +273,29 @@
         function gameOver(reason) { if (isGameOver) return; isGameOver = true; stopTimer(); document.removeEventListener('keydown', handleKeyPress); canvas.removeEventListener('click', handleCanvasClick); if(audioStarted) playGameOverSound(); let message = "Game Over!"; if (reason === "time") { message = `Time's Up! You made it to level ${round}!`; } const messageDuration = 3000; showMessage(message, messageDuration, () => { saveHighScore(steps); switchScreen('start'); }); }
 
         // --- Screen Switching ---
-        function switchScreen(screenName) { currentScreen = screenName; document.removeEventListener('keydown', handleKeyPress); canvas.removeEventListener('click', handleCanvasClick); stopTimer(); if (screenName === 'start') { startMenu.classList.remove('hidden'); gameScreen.classList.add('hidden'); updateHighScoreDisplay(); } else { startMenu.classList.add('hidden'); gameScreen.classList.remove('hidden'); document.addEventListener('keydown', handleKeyPress); canvas.addEventListener('click', handleCanvasClick); updateStatsDisplay(); drawMaze(); if (round === 1 && steps === 0) { showMessage("Get to the exit!", 2000); } } }
+        function switchScreen(screenName) {
+             currentScreen = screenName;
+             document.removeEventListener('keydown', handleKeyPress);
+             canvas.removeEventListener('click', handleCanvasClick);
+             stopTimer(); // Always stop timer when switching screens
+
+             if (screenName === 'start') {
+                 startMenu.classList.remove('hidden');
+                 gameScreen.classList.add('hidden');
+                 updateHighScoreDisplay();
+             } else { // 'game'
+                 startMenu.classList.add('hidden');
+                 gameScreen.classList.remove('hidden');
+                 document.addEventListener('keydown', handleKeyPress);
+                 canvas.addEventListener('click', handleCanvasClick);
+                 updateStatsDisplay();
+                 drawMaze();
+                 if (round === 1 && steps === 0) {
+                     // ** Start Message **
+                     showMessage("Get to the exit before time runs out!", 2000);
+                 }
+             }
+         }
 
         // --- Game Start / Next Round ---
         async function startNewGame() { if (!audioStarted) { try { await Tone.start(); console.log('Audio context started'); initializeSynths(); audioStarted = true; } catch (e) { console.error("Failed to start audio context:", e); } } round = 1; steps = 0; currentGameHighestRound = 1; generateMaze(); placeItems(); switchScreen('game'); startTimer(); if (audioStarted) playStartSound(); }
@@ -359,12 +315,24 @@
 
         // --- Input Handlers ---
         function handleKeyPress(event) { if (currentScreen !== 'game' || messageTimeout || isGameOver || !audioStarted) return; switch (event.key) { case 'ArrowUp': case 'w': movePlayer(0, -1); event.preventDefault(); break; case 'ArrowDown': case 's': movePlayer(0, 1); event.preventDefault(); break; case 'ArrowLeft': case 'a': movePlayer(-1, 0); event.preventDefault(); break; case 'ArrowRight': case 'd': movePlayer(1, 0); event.preventDefault(); break; } }
-        function handleCanvasClick(event) { if (currentScreen !== 'game' || messageTimeout || isGameOver || !audioStarted) return; const rect = canvas.getBoundingClientRect(); const clickX = event.clientX - rect.left; const clickY = event.clientY - rect.top; const targetGridX = Math.floor(clickX / CELL_SIZE); const targetGridY = Math.floor(clickY / CELL_SIZE); const diffX = targetGridX - playerPos.x; const diffY = targetGridY - playerPos.y; let dx = 0; let dy = 0; if (Math.abs(diffX) > Math.abs(diffY)) { dx = diffX > 0 ? 1 : -1; } else if (Math.abs(diffY) > Math.abs(diffX)) { dy = diffY > 0 ? 1 : -1; } else if (diffX !== 0) { dx = diffX > 0 ? 1 : -1; } movePlayer(dx, dy); }
+        function handleCanvasClick(event) {
+             if (currentScreen !== 'game' || messageTimeout || isGameOver || !audioStarted) return;
+             const rect = canvas.getBoundingClientRect(); const clickX = event.clientX - rect.left; const clickY = event.clientY - rect.top;
+             const scaleX = canvas.width / rect.width; const scaleY = canvas.height / rect.height;
+             const scaledClickX = clickX * scaleX; const scaledClickY = clickY * scaleY;
+             const targetGridX = Math.floor(scaledClickX / CELL_SIZE); const targetGridY = Math.floor(scaledClickY / CELL_SIZE);
+             const diffX = targetGridX - playerPos.x; const diffY = targetGridY - playerPos.y;
+             let dx = 0; let dy = 0;
+             if (Math.abs(diffX) > Math.abs(diffY)) { dx = diffX > 0 ? 1 : -1; } else if (Math.abs(diffY) > Math.abs(diffX)) { dy = diffY > 0 ? 1 : -1; } else if (diffX !== 0) { dx = diffX > 0 ? 1 : -1; }
+             movePlayer(dx, dy);
+        }
+
 
         // --- Exit Game ---
         function exitGame() { if (isGameOver) return; stopTimer(); if(audioStarted) playExitSound(); saveHighScore(steps); document.removeEventListener('keydown', handleKeyPress); canvas.removeEventListener('click', handleCanvasClick); setTimeout(() => { switchScreen('start'); }, 300); }
 
         // --- Initialization ---
+        canvas.style.maxWidth = `${canvasPixelWidth}px`;
         newGameBtn.addEventListener('click', async () => { startNewGame(); });
         exitGameBtn.addEventListener('click', exitGame);
         loadHighScore();
