@@ -5,14 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maze Explorer</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
         /* Custom styles */
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Press Start 2P', cursive;
             overscroll-behavior: none; /* Prevent pull-to-refresh */
             touch-action: manipulation; /* Prevent double-tap zoom on body */
         }
@@ -309,7 +307,7 @@
                 let itemCollected = false;
                 for (let i = items.length - 1; i >= 0; i--) { const item = items[i]; if (item.x === playerPos.x && item.y === playerPos.y) { const itemData = itemTypes[item.type]; if (itemData && itemData.effect) { itemData.effect(); showPickupNotification(item.name); } items.splice(i, 1); itemCollected = true; break; } }
                 drawMaze();
-                if (!isGameOver && playerPos.x === exitPos.x && playerPos.y === exitPos.y) { console.log("Reached Exit!"); if(audioStarted) playNextLevelSound(); const nextRoundNumber = round + 1; let message = `Entering Level ${nextRoundNumber}`; let isNewBest = false; if (nextRoundNumber > currentGameHighestRound) { currentGameHighestRound = nextRoundNumber; message += "\nNew Best!"; isNewBest = true; } const messageDuration = isNewBest ? 2500 : 2000; round++; showMessage(message, messageDuration, nextRound); }
+                if (!isGameOver && playerPos.x === exitPos.x && playerPos.y === exitPos.y) { console.log("Reached Exit!"); if(audioStarted) playNextLevelSound(); const nextRoundNumber = round + 1; let message = `You WIN!\n`; let isNewBest = false; if (nextRoundNumber > currentGameHighestRound) { currentGameHighestRound = nextRoundNumber; message += "New Best!\n"; isNewBest = true; }; message+= `Going to level ${nextRoundNumber}` ;const messageDuration = isNewBest ? 2500 : 2000; round++; showMessage(message, messageDuration, nextRound); }
             }
         }
 
