@@ -59,7 +59,7 @@
             opacity: 0;
             transition: opacity 0.5s ease-in-out;
             pointer-events: none;
-            white-space: nowrap;
+            white-space: normal;
             max-width: 90%; /* Prevent text from getting too wide even if it wraps */
         }
         #game-message.visible {
@@ -292,7 +292,7 @@
                  drawMaze();
                  if (round === 1 && steps === 0) {
                      // ** Start Message **
-                     showMessage("Get to the exit before time runs out!", 2000);
+                     showMessage("Get to the exit \nbefore time runs out!", 2000);
                  }
              }
          }
@@ -309,7 +309,7 @@
                 let itemCollected = false;
                 for (let i = items.length - 1; i >= 0; i--) { const item = items[i]; if (item.x === playerPos.x && item.y === playerPos.y) { const itemData = itemTypes[item.type]; if (itemData && itemData.effect) { itemData.effect(); showPickupNotification(item.name); } items.splice(i, 1); itemCollected = true; break; } }
                 drawMaze();
-                if (!isGameOver && playerPos.x === exitPos.x && playerPos.y === exitPos.y) { console.log("Reached Exit!"); if(audioStarted) playNextLevelSound(); const nextRoundNumber = round + 1; let message = `Entering Level ${nextRoundNumber}`; let isNewBest = false; if (nextRoundNumber > currentGameHighestRound) { currentGameHighestRound = nextRoundNumber; message += ". New Best!"; isNewBest = true; } const messageDuration = isNewBest ? 2500 : 2000; round++; showMessage(message, messageDuration, nextRound); }
+                if (!isGameOver && playerPos.x === exitPos.x && playerPos.y === exitPos.y) { console.log("Reached Exit!"); if(audioStarted) playNextLevelSound(); const nextRoundNumber = round + 1; let message = `Entering Level ${nextRoundNumber}`; let isNewBest = false; if (nextRoundNumber > currentGameHighestRound) { currentGameHighestRound = nextRoundNumber; message += "\nNew Best!"; isNewBest = true; } const messageDuration = isNewBest ? 2500 : 2000; round++; showMessage(message, messageDuration, nextRound); }
             }
         }
 
